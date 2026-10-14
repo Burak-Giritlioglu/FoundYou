@@ -6,13 +6,32 @@
 	objectVersion = 110;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		3F7CBC9E307E6C8700C18B72 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 3F7CBC9D307E6C8700C18B72 /* FirebaseAuth */; };
+		3F7CBCA0307E6C8700C18B72 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 3F7CBC9F307E6C8700C18B72 /* FirebaseCore */; };
+		3F7CBCA2307E6C8700C18B72 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 3F7CBCA1307E6C8700C18B72 /* FirebaseFirestore */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		3F7CBC7C307E3D5400C18B72 /* FoundYou.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FoundYou.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		3F7CBC91307E454F00C18B72 /* Exceptions for "FoundYou" folder in "FoundYou" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 3F7CBC7B307E3D5400C18B72 /* FoundYou */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		3F7CBC7E307E3D5400C18B72 /* FoundYou */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				3F7CBC91307E454F00C18B72 /* Exceptions for "FoundYou" folder in "FoundYou" target */,
+			);
 			path = FoundYou;
 			sourceTree = "<group>";
 		};
@@ -22,6 +41,9 @@
 		3F7CBC79307E3D5400C18B72 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
+				3F7CBCA0307E6C8700C18B72 /* FirebaseCore in Frameworks */,
+				3F7CBC9E307E6C8700C18B72 /* FirebaseAuth in Frameworks */,
+				3F7CBCA2307E6C8700C18B72 /* FirebaseFirestore in Frameworks */,
 			);
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -60,6 +82,11 @@
 				3F7CBC7E307E3D5400C18B72 /* FoundYou */,
 			);
 			name = FoundYou;
+			packageProductDependencies = (
+				3F7CBC9D307E6C8700C18B72 /* FirebaseAuth */,
+				3F7CBC9F307E6C8700C18B72 /* FirebaseCore */,
+				3F7CBCA1307E6C8700C18B72 /* FirebaseFirestore */,
+			);
 			productName = FoundYou;
 			productReference = 3F7CBC7C307E3D5400C18B72 /* FoundYou.app */;
 			productType = "com.apple.product-type.application";
@@ -88,6 +115,9 @@
 			);
 			mainGroup = 3F7CBC73307E3D5400C18B72;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				3F7CBC9C307E6C8700C18B72 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 3F7CBC7D307E3D5400C18B72 /* Products */;
 			projectDirPath = "";
@@ -246,11 +276,15 @@
 				DEVELOPMENT_TEAM = 6P3R3ZD9QN;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = FoundYou/Info.plist;
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "FoundYou, arkadaşının yönünü bulmak için konum ve pusula bilgilerini kullanır.";
+				INFOPLIST_KEY_NSNearbyInteractionUsageDescription = "Arkadaşının yakın mesafedeki yönünü ve uzaklığını belirlemek için kullanılır.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -278,11 +312,15 @@
 				DEVELOPMENT_TEAM = 6P3R3ZD9QN;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = FoundYou/Info.plist;
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "FoundYou, arkadaşının yönünü bulmak için konum ve pusula bilgilerini kullanır.";
+				INFOPLIST_KEY_NSNearbyInteractionUsageDescription = "Arkadaşının yakın mesafedeki yönünü ve uzaklığını belirlemek için kullanılır.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -320,6 +358,35 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		3F7CBC9C307E6C8700C18B72 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 13.0.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		3F7CBC9D307E6C8700C18B72 /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3F7CBC9C307E6C8700C18B72 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		3F7CBC9F307E6C8700C18B72 /* FirebaseCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3F7CBC9C307E6C8700C18B72 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCore;
+		};
+		3F7CBCA1307E6C8700C18B72 /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3F7CBC9C307E6C8700C18B72 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 3F7CBC74307E3D5400C18B72 /* Project object */;
 	validationLevel = 1;
