@@ -1,3 +1,4 @@
+
 import SwiftUI
 import simd
 
@@ -9,8 +10,94 @@ struct NavigationScreen: View {
     let isLoading: Bool
     let onEndConnection: () -> Void
 
+    @AppStorage("selectedArrowColor")
+    private var selectedArrowColor =
+        ArrowColor.lime.rawValue
+
+    @State private var showColorPicker = false
+
+    // MARK: - Color
+
+    private var currentArrowColor: ArrowColor {
+        ArrowColor(rawValue: selectedArrowColor) ?? .lime
+    }
+
+    private var arrowColorBinding: Binding<ArrowColor> {
+        Binding(
+            get: {
+                currentArrowColor
+            },
+            set: { newColor in
+                selectedArrowColor = newColor.rawValue
+            }
+        )
+    }
+
+    // MARK: - Arrow Availability
+
+    private var hasArrowDirection: Bool {
+        navigation.uwbArrowDirection != nil ||
+        navigation.bearing != nil
+    }
+
+    // MARK: - Friend GPS Status
+
+    private var showLastKnownLocation: Bool {
+        navigation.source == .gps &&
+        navigation.isFriendLocationLastKnown &&
+        navigation.friendLocationUpdatedAt != nil
+    }
+
+    private var lastUpdatedText: String? {
+
+        guard let date = navigation.friendLocationUpdatedAt else {
+            return nil
+        }
+
+        let seconds = max(
+            Int(Date().timeIntervalSince(date)),
+            0
+        )
+
+        if seconds < 60 {
+            return "Updated less than a minute ago"
+        }
+
+        let minutes = seconds / 60
+
+        if minutes < 60 {
+            return "Last updated \(minutes) min ago"
+        }
+
+        let hours = minutes / 60
+
+        if hours < 24 {
+            return "Last updated \(hours) hr ago"
+        }
+
+        let days = hours / 24
+
+        return "Last updated \(days) days ago"
+    }
+
+    // MARK: - Main View
+
     var body: some View {
-        VStack(spacing: 24) {
+
+        VStack(spacing: 16) {
+
+            navigationCard
+
+            customizationSection
+        }
+        .padding(.horizontal, 24)
+    }
+
+    // MARK: - Navigation Card
+
+    private var navigationCard: some View {
+
+        VStack(spacing: 22) {
 
             header
 
@@ -33,21 +120,23 @@ struct NavigationScreen: View {
             in: RoundedRectangle(cornerRadius: 28)
         )
         .overlay {
+
             RoundedRectangle(cornerRadius: 28)
                 .stroke(
                     FoundYouTheme.purple.opacity(0.35),
                     lineWidth: 1
                 )
         }
-        .padding(.horizontal, 24)
     }
 
     // MARK: - Header
 
     private var header: some View {
+
         VStack(spacing: 8) {
 
             HStack(spacing: 8) {
+
                 Image(systemName: "sparkles")
                     .foregroundStyle(FoundYouTheme.lime)
 
@@ -77,11 +166,12 @@ struct NavigationScreen: View {
     // MARK: - 3D Arrow
 
     private var arrowSection: some View {
+
         ZStack {
 
             Circle()
                 .stroke(
-                    FoundYouTheme.purple.opacity(0.18),
+                    currentArrowColor.color.opacity(0.18),
                     lineWidth: 2
                 )
                 .frame(width: 290, height: 290)
@@ -98,29 +188,44 @@ struct NavigationScreen: View {
 
             Circle()
                 .fill(
-                    FoundYouTheme.lime.opacity(0.07)
+                    currentArrowColor.color.opacity(0.07)
                 )
                 .frame(width: 190, height: 190)
                 .blur(radius: 28)
 
-            if let bearing = navigation.bearing {
+            if hasArrowDirection {
+
                 Arrow3DView(
                     orientation: deviceQuaternion,
-                    targetBearing: bearing
+                    targetBearing: navigation.bearing ?? 0,
+                    uwbDirection: navigation.uwbArrowDirection,
+                    arrowColor: currentArrowColor
                 )
                 .frame(height: 330)
+                .opacity(
+                    navigation.isMeasurementStale
+                        ? 0.55
+                        : 1
+                )
 
             } else {
+
                 VStack(spacing: 16) {
+
                     ProgressView()
-                        .tint(FoundYouTheme.lime)
+                        .tint(currentArrowColor.color)
                         .scaleEffect(1.6)
 
-                    Text("Finding your friend's direction...")
-                        .font(.caption)
-                        .foregroundStyle(
-                            FoundYouTheme.secondaryText
-                        )
+                    Text(
+                        navigation.distance != nil
+                        ? "Distance found. Waiting for direction..."
+                        : "Finding your friend's direction..."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(
+                        FoundYouTheme.secondaryText
+                    )
+                    .multilineTextAlignment(.center)
                 }
                 .frame(height: 330)
             }
@@ -133,9 +238,11 @@ struct NavigationScreen: View {
     // MARK: - Distance
 
     private var distanceSection: some View {
+
         VStack(spacing: 10) {
 
             if let distance = navigation.distance {
+
                 Text(distanceText(distance))
                     .font(
                         .system(
@@ -145,7 +252,7 @@ struct NavigationScreen: View {
                         )
                     )
                     .monospacedDigit()
-                    .foregroundStyle(FoundYouTheme.lime)
+                    .foregroundStyle(currentArrowColor.color)
                     .contentTransition(.numericText())
                     .animation(
                         .easeInOut(duration: 0.2),
@@ -153,6 +260,7 @@ struct NavigationScreen: View {
                     )
 
             } else {
+
                 Text("Calculating distance...")
                     .font(.subheadline)
                     .foregroundStyle(
@@ -160,19 +268,70 @@ struct NavigationScreen: View {
                     )
             }
 
-            HStack(spacing: 7) {
-                Image(systemName: "location.fill")
-                    .foregroundStyle(FoundYouTheme.pink)
+            // MARK: Last Known GPS Location
 
-                Text("Getting closer?")
-                    .font(
-                        .system(
-                            size: 14,
-                            weight: .semibold,
-                            design: .rounded
+            if showLastKnownLocation {
+
+                VStack(spacing: 6) {
+
+                    HStack(spacing: 7) {
+
+                        Image(systemName: "clock.arrow.circlepath")
+                            .foregroundStyle(FoundYouTheme.pink)
+
+                        Text("Last known location")
+                            .font(
+                                .system(
+                                    size: 13,
+                                    weight: .semibold,
+                                    design: .rounded
+                                )
+                            )
+                            .foregroundStyle(.white)
+                    }
+
+                    if let updatedText = lastUpdatedText {
+
+                        Text(updatedText)
+                            .font(.caption2)
+                            .foregroundStyle(
+                                FoundYouTheme.secondaryText
+                            )
+                    }
+
+                    Text("Your friend may have moved.")
+                        .font(.caption2)
+                        .foregroundStyle(
+                            FoundYouTheme.secondaryText
                         )
+                }
+                .multilineTextAlignment(.center)
+
+            } else if navigation.isMeasurementStale {
+
+                Text("Last known measurement")
+                    .font(.caption2)
+                    .foregroundStyle(
+                        FoundYouTheme.secondaryText
                     )
-                    .foregroundStyle(.white.opacity(0.85))
+
+            } else {
+
+                HStack(spacing: 7) {
+
+                    Image(systemName: "location.fill")
+                        .foregroundStyle(FoundYouTheme.pink)
+
+                    Text("Follow the arrow!")
+                        .font(
+                            .system(
+                                size: 14,
+                                weight: .semibold,
+                                design: .rounded
+                            )
+                        )
+                        .foregroundStyle(.white.opacity(0.85))
+                }
             }
         }
     }
@@ -180,6 +339,7 @@ struct NavigationScreen: View {
     // MARK: - Connection
 
     private var connectionStatus: some View {
+
         HStack(spacing: 9) {
 
             Circle()
@@ -187,7 +347,12 @@ struct NavigationScreen: View {
                 .frame(width: 9, height: 9)
 
             Text("You're connected!")
-                .font(.system(size: 13, weight: .semibold))
+                .font(
+                    .system(
+                        size: 13,
+                        weight: .semibold
+                    )
+                )
                 .foregroundStyle(.white)
 
             Image(systemName: "checkmark.circle.fill")
@@ -205,41 +370,132 @@ struct NavigationScreen: View {
 
     #if DEBUG
     private var sensorIndicator: some View {
+
         HStack(spacing: 8) {
 
             Circle()
                 .fill(
-                    navigation.source == .uwb
+                    navigation.uwbArrowDirection != nil
                         ? FoundYouTheme.lime
                         : FoundYouTheme.pink
                 )
                 .frame(width: 8, height: 8)
 
-            Text(
-                navigation.source == .uwb
-                    ? "UWB TEST"
-                    : navigation.source == .gps
-                        ? "GPS"
-                        : "WAITING FOR DIRECTION"
-            )
-            .font(.caption2.monospaced())
-            .foregroundStyle(
-                FoundYouTheme.secondaryText
-            )
+            Text(sensorText)
+                .font(.caption2.monospaced())
+                .foregroundStyle(
+                    FoundYouTheme.secondaryText
+                )
         }
         .padding(.vertical, 6)
     }
+
+    private var sensorText: String {
+
+        if navigation.uwbArrowDirection != nil {
+            return "UWB 3D DIRECTION"
+        }
+
+        if navigation.source == .uwb {
+            return navigation.bearing != nil
+                ? "UWB DISTANCE + GPS DIRECTION"
+                : "UWB DISTANCE ONLY"
+        }
+
+        if navigation.source == .gps {
+            return navigation.isFriendLocationLastKnown
+                ? "GPS LAST KNOWN LOCATION"
+                : "GPS"
+        }
+
+        return navigation.bearing != nil
+            ? "LAST KNOWN DIRECTION"
+            : "WAITING FOR DIRECTION"
+    }
     #endif
+
+    // MARK: - Customization
+
+    private var customizationSection: some View {
+
+        VStack(spacing: 12) {
+
+            Button {
+
+                withAnimation(.spring(response: 0.3)) {
+                    showColorPicker.toggle()
+                }
+
+            } label: {
+
+                HStack(spacing: 12) {
+
+                    Image(systemName: "paintpalette.fill")
+                        .foregroundStyle(currentArrowColor.color)
+
+                    Text("Customize your arrow")
+                        .font(
+                            .system(
+                                size: 15,
+                                weight: .bold
+                            )
+                        )
+                        .foregroundStyle(.white)
+
+                    Spacer()
+
+                    Circle()
+                        .fill(currentArrowColor.color)
+                        .frame(width: 22, height: 22)
+
+                    Image(
+                        systemName: showColorPicker
+                            ? "chevron.up"
+                            : "chevron.down"
+                    )
+                    .foregroundStyle(
+                        FoundYouTheme.secondaryText
+                    )
+                }
+                .padding(18)
+                .background(
+                    FoundYouTheme.cardGradient,
+                    in: RoundedRectangle(cornerRadius: 20)
+                )
+            }
+            .buttonStyle(.plain)
+
+            if showColorPicker {
+
+                ArrowColorPicker(
+                    selectedColor: arrowColorBinding
+                )
+                .transition(
+                    .opacity.combined(
+                        with: .move(edge: .top)
+                    )
+                )
+            }
+        }
+    }
 
     // MARK: - End Connection
 
     private var endConnectionButton: some View {
+
         Button(action: onEndConnection) {
+
             HStack(spacing: 9) {
+
                 Image(systemName: "xmark.circle.fill")
 
                 Text("End connection")
-                    .font(.system(size: 15, weight: .bold))
+                    .font(
+                        .system(
+                            size: 15,
+                            weight: .bold
+                        )
+                    )
             }
             .foregroundStyle(FoundYouTheme.pink)
             .frame(maxWidth: .infinity)
@@ -249,6 +505,7 @@ struct NavigationScreen: View {
                 in: RoundedRectangle(cornerRadius: 16)
             )
             .overlay {
+
                 RoundedRectangle(cornerRadius: 16)
                     .stroke(
                         FoundYouTheme.pink.opacity(0.35),
@@ -263,8 +520,12 @@ struct NavigationScreen: View {
     // MARK: - Distance Formatting
 
     private func distanceText(_ distance: Double) -> String {
+
         if distance < 1000 {
-            return String(format: "%.1f m", distance)
+            return String(
+                format: "%.1f m",
+                distance
+            )
         }
 
         return String(

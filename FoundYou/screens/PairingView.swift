@@ -6,6 +6,7 @@ struct PairingView: View {
     @ObservedObject var pairing: PairingManager
 
     @State private var enteredCode = ""
+    @FocusState private var isCodeFocused: Bool
 
     var body: some View {
         VStack(spacing: 24) {
@@ -19,6 +20,7 @@ struct PairingView: View {
                     code: code,
                     expiresAt: session.expiresAt,
                     onGenerateNewCode: {
+                        isCodeFocused = false
                         pairing.preparePairing()
                     }
                 )
@@ -45,6 +47,17 @@ struct PairingView: View {
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background {
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    isCodeFocused = false
+                }
+        }
+        .onTapGesture {
+            isCodeFocused = false
+        }
     }
 
     // MARK: - Hero
@@ -121,6 +134,7 @@ struct PairingView: View {
 
     private var createCodeButton: some View {
         Button {
+            isCodeFocused = false
             pairing.preparePairing()
         } label: {
             HStack(spacing: 15) {
@@ -194,6 +208,7 @@ struct PairingView: View {
             )
             .keyboardType(.numberPad)
             .textContentType(.oneTimeCode)
+            .focused($isCodeFocused)
             .multilineTextAlignment(.center)
             .font(
                 .system(
@@ -210,12 +225,20 @@ struct PairingView: View {
                 in: RoundedRectangle(cornerRadius: 14)
             )
             .onChange(of: enteredCode) { _, value in
-                enteredCode = String(
-                    value.filter(\.isNumber).prefix(6)
+                let filtered = String(
+                    value.filter {
+                        $0.isASCII && $0.isNumber
+                    }
+                    .prefix(6)
                 )
+
+                if enteredCode != filtered {
+                    enteredCode = filtered
+                }
             }
 
             Button {
+                isCodeFocused = false
                 pairing.joinPairing(code: enteredCode)
             } label: {
                 HStack {

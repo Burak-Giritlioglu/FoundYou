@@ -1,137 +1,357 @@
+
 import Foundation
 import Combine
 import FirebaseAuth
-import FirebaseFirestore
+import FirebaseDatabase
 
 @MainActor
 final class UWBTokenExchangeManager: ObservableObject {
+
+    // MARK: - Published State
 
     @Published private(set) var peerTokenData: Data?
     @Published private(set) var isListening = false
     @Published private(set) var errorMessage: String?
 
-    private let db = Firestore.firestore()
-    private var listener: ListenerRegistration?
+    // MARK: - Database
+
+    private let db = Database.database(
+        url: "https://foundyou-5a965-default-rtdb.europe-west1.firebasedatabase.app"
+    )
+
+    private var myReference: DatabaseReference?
+    private var peerReference: DatabaseReference?
+    private var peerObserver: DatabaseHandle?
+
+    // MARK: - State
 
     private var activeSessionID: String?
     private var generation = 0
 
-    // MARK: - Start Exchange
+    private var desiredToken: Data?
+    private var uploadedToken: Data?
+
+    private var writeInProgress = false
+    private var cleanupInProgress = false
+
+    private var pendingStart: (PairingSession, Data)?
+
+    // MARK: - Start
 
     func start(
         session: PairingSession,
         myTokenData: Data
     ) {
-        guard session.status == .connected else {
-            errorMessage = "Eşleştirme henüz onaylanmadı."
+
+        guard session.status == .connected,
+              let uid = Auth.auth().currentUser?.uid else {
+
+            errorMessage = "Connection is not ready."
             return
         }
 
-        guard let uid = Auth.auth().currentUser?.uid else {
-            errorMessage = "Firebase oturumu bulunamadı."
-            return
-        }
-
-        let peerUID: String
+        let otherUID: String
 
         if session.hostUID == uid {
-            guard let guestUID = session.guestUID else {
-                errorMessage = "Arkadaş UID'si bulunamadı."
+            guard let guest = session.guestUID else {
+                errorMessage = "Friend is missing."
                 return
             }
-            peerUID = guestUID
+            otherUID = guest
+
         } else if session.guestUID == uid {
-            peerUID = session.hostUID
+            otherUID = session.hostUID
+
         } else {
-            errorMessage = "Bu eşleştirmenin katılımcısı değilsin."
+            errorMessage = "You are not part of this connection."
             return
         }
 
-        stop()
+        // Wait for the previous token cleanup
+        // before starting a new exchange.
 
-        activeSessionID = session.id
-        isListening = true
-        errorMessage = nil
+        if cleanupInProgress {
+            pendingStart = (session, myTokenData)
+            return
+        }
 
+        if isListening,
+           activeSessionID == session.id {
+
+            guard desiredToken != myTokenData else {
+                return
+            }
+
+            desiredToken = myTokenData
+            publishIfNeeded()
+            return
+        }
+
+        if isListening {
+            pendingStart = (session, myTokenData)
+            stop()
+            return
+        }
+
+        generation += 1
         let currentGeneration = generation
 
-        let users = db
-            .collection("uwbTokens")
-            .document(session.id)
-            .collection("users")
+        activeSessionID = session.id
+        desiredToken = myTokenData
+        uploadedToken = nil
 
-        // Listen to the other phone's token.
-        listener = users.document(peerUID)
-            .addSnapshotListener { [weak self] snapshot, error in
+        peerTokenData = nil
+        errorMessage = nil
+        isListening = true
 
-                Task { @MainActor in
+        let root = db.reference()
+            .child("uwbTokens")
+            .child(session.id)
+
+        let localReference = root.child(uid)
+        let remoteReference = root.child(otherUID)
+
+        myReference = localReference
+        peerReference = remoteReference
+
+        // Arrange automatic token removal
+        // if Firebase detects a disconnection.
+
+        localReference.onDisconnectRemoveValue {
+            [weak self] error, _ in
+
+            Task { @MainActor [weak self] in
+
+                guard let self,
+                      self.generation == currentGeneration,
+                      self.isListening else {
+                    return
+                }
+
+                if let error {
+                    self.errorMessage =
+                        error.localizedDescription
+
+                    self.stop()
+                    return
+                }
+
+                self.observePeer(
+                    remoteReference,
+                    generation: currentGeneration
+                )
+
+                self.publishIfNeeded()
+            }
+        }
+    }
+
+    // MARK: - Observe Peer Token
+
+    private func observePeer(
+        _ reference: DatabaseReference,
+        generation currentGeneration: Int
+    ) {
+
+        peerObserver = reference.observe(
+            .value,
+            with: { [weak self] snapshot in
+
+                Task { @MainActor [weak self] in
+
                     guard let self,
                           self.isListening,
-                          self.generation == currentGeneration,
-                          self.activeSessionID == session.id else {
+                          self.generation == currentGeneration else {
                         return
                     }
 
-                    if let error {
-                        self.errorMessage = error.localizedDescription
-                        return
-                    }
-
-                    guard let tokenString = snapshot?.data()?["token"]
-                        as? String,
-                          let tokenData = Data(
+                    guard let data = snapshot.value
+                            as? [String: Any],
+                          let tokenString = data["token"]
+                            as? String,
+                          let token = Data(
                             base64Encoded: tokenString
-                          ) else {
+                          ),
+                          !token.isEmpty else {
+
                         self.peerTokenData = nil
                         return
                     }
 
-                    self.peerTokenData = tokenData
+                    // Ignore unchanged tokens.
+                    if self.peerTokenData != token {
+                        self.peerTokenData = token
+                    }
+                }
+
+            },
+            withCancel: { [weak self] error in
+
+                Task { @MainActor [weak self] in
+
+                    guard let self,
+                          self.generation == currentGeneration else {
+                        return
+                    }
+
+                    self.errorMessage =
+                        error.localizedDescription
                 }
             }
+        )
+    }
 
-        // Publish our own token.
-        let reference = users.document(uid)
+    // MARK: - Publish Local Token
 
-        Task { [weak self] in
-            guard let self,
-                  self.isListening,
-                  self.generation == currentGeneration else {
-                return
-            }
+    private func publishIfNeeded() {
 
-            do {
-                try await reference.setData([
-                    "token": myTokenData.base64EncodedString(),
-                    "updatedAt": FieldValue.serverTimestamp()
-                ])
+        guard isListening,
+              !writeInProgress,
+              !cleanupInProgress,
+              let reference = myReference,
+              let token = desiredToken,
+              token != uploadedToken else {
+            return
+        }
 
-            } catch {
-                guard self.isListening,
+        writeInProgress = true
+
+        let currentGeneration = generation
+
+        let payload: [String: Any] = [
+            "token": token.base64EncodedString(),
+            "updatedAt": ServerValue.timestamp()
+        ]
+
+        reference.setValue(payload) {
+            [weak self] error, _ in
+
+            Task { @MainActor [weak self] in
+
+                guard let self,
                       self.generation == currentGeneration else {
                     return
                 }
 
-                self.errorMessage = error.localizedDescription
+                self.writeInProgress = false
+
+                guard self.isListening else {
+                    return
+                }
+
+                if let error {
+                    self.errorMessage =
+                        error.localizedDescription
+                    return
+                }
+
+                self.uploadedToken = token
+                self.errorMessage = nil
+
+                // Publish once more only if Nearby
+                // Interaction generated a newer token.
+                self.publishIfNeeded()
             }
         }
     }
 
-    // MARK: - Stop Exchange
+    // MARK: - Stop
 
     func stop() {
+
         generation += 1
 
-        listener?.remove()
-        listener = nil
+        let referenceToRemove = myReference
+
+        if let reference = peerReference,
+           let observer = peerObserver {
+
+            reference.removeObserver(
+                withHandle: observer
+            )
+        }
+
+        peerReference = nil
+        peerObserver = nil
+        myReference = nil
 
         activeSessionID = nil
+
+        desiredToken = nil
+        uploadedToken = nil
+
         peerTokenData = nil
+
         isListening = false
+        writeInProgress = false
         errorMessage = nil
+
+        guard let referenceToRemove else {
+            resumePendingStart()
+            return
+        }
+
+        // One cleanup operation when UWB ends.
+        // Not a periodic write.
+
+        cleanupInProgress = true
+
+        referenceToRemove.removeValue {
+            [weak self] error, _ in
+
+            Task { @MainActor [weak self] in
+
+                guard let self else {
+                    return
+                }
+
+                self.cleanupInProgress = false
+
+                if let error {
+                    self.errorMessage =
+                        error.localizedDescription
+
+                    // Keep server-side disconnect
+                    // cleanup registered on failure.
+                    self.pendingStart = nil
+                    return
+                }
+
+                referenceToRemove
+                    .cancelDisconnectOperations()
+
+                self.resumePendingStart()
+            }
+        }
     }
 
+    // MARK: - Pending Restart
+
+    private func resumePendingStart() {
+
+        guard !cleanupInProgress,
+              let pending = pendingStart else {
+            return
+        }
+
+        pendingStart = nil
+
+        start(
+            session: pending.0,
+            myTokenData: pending.1
+        )
+    }
+
+    // MARK: - Cleanup
+
     deinit {
-        listener?.remove()
+
+        if let reference = peerReference,
+           let observer = peerObserver {
+
+            reference.removeObserver(
+                withHandle: observer
+            )
+        }
     }
 }

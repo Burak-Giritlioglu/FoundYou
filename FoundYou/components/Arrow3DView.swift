@@ -1,3 +1,4 @@
+
 import SwiftUI
 import RealityKit
 import UIKit
@@ -6,65 +7,127 @@ import simd
 struct Arrow3DView: View {
 
     let orientation: simd_quatd
+
     var targetBearing: Double = 0
 
+    // Direct 3D direction from Nearby Interaction.
+    var uwbDirection: SIMD3<Float>? = nil
+
+    var arrowColor: ArrowColor = .lime
+
     var body: some View {
+
         RealityView { content in
+
             let arrow = makeArrow()
 
             arrow.name = "FoundYouArrow"
+
             arrow.position = [0, 0, -1.2]
-            arrow.scale = SIMD3<Float>(repeating: 2.5)
+
+            arrow.scale = SIMD3<Float>(
+                repeating: 2.5
+            )
 
             content.add(arrow)
 
         } update: { content in
 
             guard let arrow = content.entities.first(
-                where: { $0.name == "FoundYouArrow" }
-            ) else {
+                where: {
+                    $0.name == "FoundYouArrow"
+                }
+            ) as? ModelEntity else {
                 return
             }
 
-            // Core Motion .xTrueNorthZVertical:
-            // +X = Kuzey
-            // +Y = Batı
-            // +Z = Yukarı
+            // MARK: - Color
 
-            let radians = targetBearing * .pi / 180
+            arrow.model?.materials = [
+                UnlitMaterial(
+                    color: arrowColor.uiColor
+                )
+            ]
 
-            // Bearing saat yönünde artar:
-            // 0° = Kuzey, 90° = Doğu
-            let targetWorld = SIMD3<Double>(
-                cos(radians),
-                -sin(radians),
-                0
-            )
+            // MARK: - Choose Direction
 
-            // Dünya yönünü telefon koordinatlarına dönüştür.
-            let targetDevice = orientation.inverse.act(targetWorld)
+            let direction: SIMD3<Float>
 
-            let direction = SIMD3<Float>(
-                Float(targetDevice.x),
-                Float(targetDevice.y),
-                Float(targetDevice.z)
-            )
+            if let uwbDirection,
+               uwbDirection.x.isFinite,
+               uwbDirection.y.isFinite,
+               uwbDirection.z.isFinite,
+               simd_length_squared(uwbDirection) > 0.000001 {
+
+                // Nearby Interaction returns a
+                // device-relative 3D direction.
+                //
+                // Use that direction directly instead
+                // of converting it into a GPS bearing.
+                //
+                // Physical calibration of the NI-to-
+                // RealityKit axis mapping is still needed.
+
+                direction = simd_normalize(
+                    uwbDirection
+                )
+
+            } else {
+
+                // MARK: - GPS Fallback
+
+                // CoreMotion world frame:
+                // +X = North
+                // +Y = West
+                // +Z = Up
+
+                let radians =
+                    targetBearing * .pi / 180
+
+                // 0 degrees = North
+                // 90 degrees = East
+
+                let targetWorld = SIMD3<Double>(
+                    cos(radians),
+                    -sin(radians),
+                    0
+                )
+
+                // Transform world direction into
+                // the phone's coordinate system.
+
+                let targetDevice =
+                    orientation.act(targetWorld)
+
+                direction = simd_normalize(
+                    SIMD3<Float>(
+                        Float(targetDevice.x),
+                        Float(targetDevice.y),
+                        Float(targetDevice.z)
+                    )
+                )
+            }
+
+            // MARK: - Rotate Arrow
 
             guard simd_length_squared(direction) > 0.000001 else {
                 return
             }
 
-            let target = simd_normalize(direction)
-
-            // Okun geometrik ucu +Y yönüne bakıyor.
-            let arrowForward = SIMD3<Float>(0, 1, 0)
+            let arrowForward = SIMD3<Float>(
+                0,
+                1,
+                0
+            )
 
             arrow.orientation = simd_quatf(
                 from: arrowForward,
-                to: target
+                to: direction
             )
         }
     }
+
+    // MARK: - Arrow Geometry
 
     private func makeArrow() -> ModelEntity {
 
@@ -83,9 +146,18 @@ struct Arrow3DView: View {
         var vertices: [SIMD3<Float>] = []
         var indices: [UInt32] = []
 
-        for z in [depth / 2, -depth / 2] {
-            for p in points {
-                vertices.append([p.x, p.y, z])
+        for z in [
+            depth / 2,
+            -depth / 2
+        ] {
+
+            for point in points {
+
+                vertices.append([
+                    point.x,
+                    point.y,
+                    z
+                ])
             }
         }
 
@@ -99,7 +171,14 @@ struct Arrow3DView: View {
 
         indices.append(contentsOf: triangles)
 
-        for i in stride(from: 0, to: triangles.count, by: 3) {
+        // Back face
+
+        for i in stride(
+            from: 0,
+            to: triangles.count,
+            by: 3
+        ) {
+
             indices.append(contentsOf: [
                 triangles[i + 2] + 7,
                 triangles[i + 1] + 7,
@@ -107,7 +186,10 @@ struct Arrow3DView: View {
             ])
         }
 
+        // Side faces
+
         for i in 0..<points.count {
+
             let next = (i + 1) % points.count
 
             let a = UInt32(i)
@@ -121,21 +203,24 @@ struct Arrow3DView: View {
             ])
         }
 
-        var descriptor = MeshDescriptor(name: "FoundYouArrow")
-        descriptor.positions = MeshBuffers.Positions(vertices)
-        descriptor.primitives = .triangles(indices)
+        var descriptor = MeshDescriptor(
+            name: "FoundYouArrow"
+        )
+
+        descriptor.positions =
+            MeshBuffers.Positions(vertices)
+
+        descriptor.primitives =
+            .triangles(indices)
 
         do {
-            let mesh = try MeshResource.generate(from: [descriptor])
 
-            // Işıktan etkilenmeyen turkuaz
+            let mesh = try MeshResource.generate(
+                from: [descriptor]
+            )
+
             let material = UnlitMaterial(
-                color: UIColor(
-                    red: 0.0,
-                    green: 0.9,
-                    blue: 1.0,
-                    alpha: 1.0
-                )
+                color: arrowColor.uiColor
             )
 
             return ModelEntity(
@@ -144,7 +229,12 @@ struct Arrow3DView: View {
             )
 
         } catch {
-            print("Arrow mesh error:", error)
+
+            print(
+                "Arrow mesh error:",
+                error
+            )
+
             return ModelEntity()
         }
     }
@@ -158,6 +248,7 @@ struct Arrow3DView: View {
             iz: 0,
             r: 1
         ),
-        targetBearing: 90
+        targetBearing: 90,
+        arrowColor: .pink
     )
 }

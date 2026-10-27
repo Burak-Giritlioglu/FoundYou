@@ -1,0 +1,19 @@
+# macOS
+.DS_Store
+
+# Xcode
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+
+# Firebase local configuration
+GoogleService-Info.plist
+
+# Environment and secrets
+.env
+.env.*
+*.p8
+*.p12
+*.pem
+*.key

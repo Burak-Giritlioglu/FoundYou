@@ -3,7 +3,7 @@ import Foundation
 import Combine
 import Security
 import FirebaseAuth
-import FirebaseFirestore
+import FirebaseDatabase
 
 enum PairingStatus: String, Codable {
     case waiting
@@ -24,13 +24,21 @@ struct PairingSession: Identifiable, Codable {
 @MainActor
 final class PairingManager: ObservableObject {
 
+    // MARK: - Published State
+
     @Published private(set) var session: PairingSession?
     @Published private(set) var pairingCode: String?
     @Published private(set) var isLoading = false
     @Published private(set) var errorMessage: String?
 
-    private let db = Firestore.firestore()
-    private var sessionListener: ListenerRegistration?
+    // MARK: - Firebase
+
+    private let db = Database.database(
+        url: "https://foundyou-5a965-default-rtdb.europe-west1.firebasedatabase.app"
+    )
+
+    private var observedReference: DatabaseReference?
+    private var observerHandle: DatabaseHandle?
 
     var currentUID: String? {
         Auth.auth().currentUser?.uid
@@ -41,10 +49,7 @@ final class PairingManager: ObservableObject {
     }
 
     var isHost: Bool {
-        guard let session, let uid = currentUID else {
-            return false
-        }
-        return session.hostUID == uid
+        session?.hostUID == currentUID
     }
 
     var hasIncomingRequest: Bool {
@@ -55,12 +60,18 @@ final class PairingManager: ObservableObject {
         errorMessage = nil
     }
 
-    // MARK: - Random Code
+    // MARK: - Helpers
 
-    private func generatePairingCode() throws -> String {
-        var randomNumber: UInt32 = 0
+    private func reference(_ code: String) -> DatabaseReference {
+        db.reference()
+            .child("sessions")
+            .child(code)
+    }
 
-        let result = withUnsafeMutableBytes(of: &randomNumber) {
+    private func createCode() throws -> String {
+        var number: UInt32 = 0
+
+        let result = withUnsafeMutableBytes(of: &number) {
             SecRandomCopyBytes(
                 kSecRandomDefault,
                 $0.count,
@@ -72,13 +83,37 @@ final class PairingManager: ObservableObject {
             throw PairingError.randomGenerationFailed
         }
 
-        return String(
-            format: "%06d",
-            randomNumber % 1_000_000
+        return String(format: "%06d", number % 1_000_000)
+    }
+
+    private func decode(
+        code: String,
+        data: [String: Any]
+    ) -> PairingSession? {
+
+        guard let hostUID = data["hostUID"] as? String,
+              let statusString = data["status"] as? String,
+              let status = PairingStatus(rawValue: statusString),
+              let createdAt = data["createdAt"] as? NSNumber,
+              let expiresAt = data["expiresAt"] as? NSNumber else {
+            return nil
+        }
+
+        return PairingSession(
+            id: code,
+            hostUID: hostUID,
+            guestUID: data["guestUID"] as? String,
+            status: status,
+            createdAt: Date(
+                timeIntervalSince1970: createdAt.doubleValue / 1000
+            ),
+            expiresAt: Date(
+                timeIntervalSince1970: expiresAt.doubleValue / 1000
+            )
         )
     }
 
-    // MARK: - Create Pairing
+    // MARK: - Create Connection
 
     func preparePairing() {
         guard !isLoading else { return }
@@ -91,54 +126,58 @@ final class PairingManager: ObservableObject {
     private func createPairing() async {
 
         guard let uid = currentUID else {
-            errorMessage = "Firebase oturumu henüz açılmadı."
+            errorMessage = "Authentication is not ready."
             return
         }
 
         isLoading = true
         errorMessage = nil
-
-        defer {
-            isLoading = false
-        }
+        defer { isLoading = false }
 
         do {
-            let code = try generatePairingCode()
-            let reference = db
-                .collection("pairingCodes")
-                .document(code)
+            for _ in 0..<5 {
+                let code = try createCode()
+                let now = Date()
+                let expiry = now.addingTimeInterval(300)
 
-            let now = Date()
-            let expiry = now.addingTimeInterval(300)
+                let data: [String: Any] = [
+                    "hostUID": uid,
+                    "status": PairingStatus.waiting.rawValue,
+                    "createdAt": Int64(now.timeIntervalSince1970 * 1000),
+                    "expiresAt": Int64(expiry.timeIntervalSince1970 * 1000)
+                ]
 
-            let data: [String: Any] = [
-                "hostUID": uid,
-                "status": "waiting",
-                "createdAt": FieldValue.serverTimestamp(),
-                "expiresAt": Timestamp(date: expiry)
-            ]
+                let created = try await transaction(
+                    at: reference(code)
+                ) { existing in
+                    guard existing == nil else { return nil }
+                    return data
+                }
 
-            try await reference.setData(data)
+                guard created else { continue }
 
-            pairingCode = code
+                pairingCode = code
+                session = PairingSession(
+                    id: code,
+                    hostUID: uid,
+                    guestUID: nil,
+                    status: .waiting,
+                    createdAt: now,
+                    expiresAt: expiry
+                )
 
-            session = PairingSession(
-                id: code,
-                hostUID: uid,
-                guestUID: nil,
-                status: .waiting,
-                createdAt: now,
-                expiresAt: expiry
-            )
+                listen(code: code)
+                return
+            }
 
-            listenToSession(code: code)
+            errorMessage = "Could not generate an available code."
 
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
-    // MARK: - Join Pairing
+    // MARK: - Join Connection
 
     func joinPairing(code: String) {
         guard !isLoading else { return }
@@ -151,14 +190,114 @@ final class PairingManager: ObservableObject {
     private func requestPairing(code: String) async {
 
         guard let uid = currentUID else {
-            errorMessage = "Firebase oturumu henüz açılmadı."
+            errorMessage = "Authentication is not ready."
             return
         }
 
+        let code = code.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+
         guard code.count == 6,
               code.allSatisfy({ $0.isNumber }) else {
-            errorMessage = "Geçerli bir 6 haneli kod gir."
+            errorMessage = "Enter a valid 6-digit code."
             return
+        }
+
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+
+        do {
+            let ref = reference(code)
+
+            let joined = try await transaction(at: ref) { existing in
+                guard var data = existing,
+                      let hostUID = data["hostUID"] as? String,
+                      hostUID != uid,
+                      let status = data["status"] as? String,
+                      status == PairingStatus.waiting.rawValue,
+                      data["guestUID"] == nil,
+                      let expiresAt = data["expiresAt"] as? NSNumber,
+                      expiresAt.doubleValue >
+                        Date().timeIntervalSince1970 * 1000 else {
+                    return nil
+                }
+
+                data["guestUID"] = uid
+                data["status"] = PairingStatus.pending.rawValue
+                return data
+            }
+
+            guard joined else {
+                errorMessage = "Code is invalid, expired, or already used."
+                return
+            }
+
+            let snapshot = try await ref.getData()
+
+            guard let data = snapshot.value as? [String: Any],
+                  let updatedSession = decode(
+                    code: code,
+                    data: data
+                  ) else {
+                errorMessage = "Could not load the connection."
+                return
+            }
+
+            pairingCode = nil
+            session = updatedSession
+            listen(code: code)
+
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    // MARK: - Accept / Reject / End
+
+    func acceptPairing() {
+        guard hasIncomingRequest,
+              let code = session?.id else { return }
+
+        Task {
+            await changeStatus(code: code, to: .connected)
+        }
+    }
+
+    func rejectPairing() {
+        guard hasIncomingRequest,
+              let code = session?.id else { return }
+
+        Task {
+            await changeStatus(code: code, to: .ended)
+        }
+    }
+
+    func endPairing() {
+        guard session?.status == .connected,
+              let code = session?.id else { return }
+
+        Task {
+            await changeStatus(code: code, to: .ended)
+        }
+    }
+
+    // MARK: - Awaitable End Connection
+
+    // NEW:
+    // Call after TrackingCoordinator has
+    // successfully cleaned up local GPS sharing.
+
+    func endPairingAndWait() async throws {
+
+        guard session?.status == .connected,
+              let code = session?.id else {
+            throw PairingEndError.notConnected
+        }
+
+        guard !isLoading else {
+            throw PairingEndError.operationInProgress
         }
 
         isLoading = true
@@ -168,200 +307,159 @@ final class PairingManager: ObservableObject {
             isLoading = false
         }
 
-        let reference = db
-            .collection("pairingCodes")
-            .document(code)
-
         do {
-            let snapshot = try await reference.getDocument()
+            try await withCheckedThrowingContinuation {
+                (continuation: CheckedContinuation<Void, Error>) in
 
-            guard let data = snapshot.data() else {
-                errorMessage = "Eşleştirme kodu bulunamadı."
-                return
+                reference(code).updateChildValues([
+                    "status": PairingStatus.ended.rawValue
+                ]) { error, _ in
+
+                    if let error {
+                        continuation.resume(throwing: error)
+                    } else {
+                        continuation.resume()
+                    }
+                }
             }
-
-            guard let hostUID = data["hostUID"] as? String,
-                  let status = data["status"] as? String,
-                  let expiry = data["expiresAt"] as? Timestamp,
-                  let created = data["createdAt"] as? Timestamp else {
-                errorMessage = "Eşleştirme verisi geçersiz."
-                return
-            }
-
-            guard hostUID != uid else {
-                errorMessage = "Kendi kodunla eşleşemezsin."
-                return
-            }
-
-            guard status == "waiting" else {
-                errorMessage = "Bu kod artık kullanılabilir değil."
-                return
-            }
-
-            guard expiry.dateValue() > Date() else {
-                errorMessage = "Eşleştirme kodunun süresi dolmuş."
-                return
-            }
-
-            try await reference.updateData([
-                "guestUID": uid,
-                "status": "pending"
-            ])
-
-            pairingCode = nil
-
-            session = PairingSession(
-                id: code,
-                hostUID: hostUID,
-                guestUID: uid,
-                status: .pending,
-                createdAt: created.dateValue(),
-                expiresAt: expiry.dateValue()
-            )
-
-            listenToSession(code: code)
-
         } catch {
             errorMessage = error.localizedDescription
+            throw error
         }
     }
 
-    // MARK: - Accept Request
-
-    func acceptPairing() {
-        guard hasIncomingRequest,
-              let code = session?.id else {
-            return
-        }
-
-        Task {
-            await updateStatus(
-                code: code,
-                status: .connected
-            )
-        }
-    }
-
-    // MARK: - Reject Request
-
-    func rejectPairing() {
-        guard hasIncomingRequest,
-              let code = session?.id else {
-            return
-        }
-
-        Task {
-            await updateStatus(
-                code: code,
-                status: .ended
-            )
-        }
-    }
-
-    // MARK: - End Pairing
-
-    func endPairing() {
-        guard let code = session?.id,
-              session?.status == .connected else {
-            return
-        }
-
-        Task {
-            await updateStatus(
-                code: code,
-                status: .ended
-            )
-        }
-    }
-
-    private func updateStatus(
+    private func changeStatus(
         code: String,
-        status: PairingStatus
+        to newStatus: PairingStatus
     ) async {
 
         guard !isLoading else { return }
 
         isLoading = true
         errorMessage = nil
-
-        defer {
-            isLoading = false
-        }
+        defer { isLoading = false }
 
         do {
-            try await db
-                .collection("pairingCodes")
-                .document(code)
-                .updateData([
-                    "status": status.rawValue
-                ])
+            try await withCheckedThrowingContinuation {
+                (continuation: CheckedContinuation<Void, Error>) in
 
+                reference(code).updateChildValues([
+                    "status": newStatus.rawValue
+                ]) { error, _ in
+
+                    if let error {
+                        continuation.resume(throwing: error)
+                    } else {
+                        continuation.resume()
+                    }
+                }
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
-    // MARK: - Realtime Listener
+    // MARK: - Session Listener
 
-    private func listenToSession(code: String) {
+    private func listen(code: String) {
+        stopListening()
 
-        sessionListener?.remove()
-        sessionListener = nil
+        let ref = reference(code)
+        observedReference = ref
 
-        sessionListener = db
-            .collection("pairingCodes")
-            .document(code)
-            .addSnapshotListener { [weak self] snapshot, error in
-
-                Task { @MainActor in
-                    guard let self else { return }
-
-                    if let error {
-                        self.errorMessage = error.localizedDescription
+        observerHandle = ref.observe(
+            .value,
+            with: { [weak self] snapshot in
+                Task { @MainActor [weak self] in
+                    guard let self,
+                          self.observedReference?.key == code,
+                          let data = snapshot.value as? [String: Any],
+                          let updated = self.decode(
+                            code: code,
+                            data: data
+                          ) else {
                         return
                     }
 
-                    guard let snapshot,
-                          let data = snapshot.data(),
-                          let hostUID = data["hostUID"] as? String,
-                          let statusString = data["status"] as? String,
-                          let status = PairingStatus(
-                            rawValue: statusString
-                          ),
-                          let created = data["createdAt"] as? Timestamp,
-                          let expiry = data["expiresAt"] as? Timestamp
-                    else {
-                        return
-                    }
+                    self.session = updated
 
-                    self.session = PairingSession(
-                        id: code,
-                        hostUID: hostUID,
-                        guestUID: data["guestUID"] as? String,
-                        status: status,
-                        createdAt: created.dateValue(),
-                        expiresAt: expiry.dateValue()
-                    )
-
-                    if status == .ended {
+                    if updated.status == .ended {
                         self.pairingCode = nil
                     }
+
+                    print(
+                        "RTDB SESSION:",
+                        code,
+                        updated.status.rawValue
+                    )
+                }
+            },
+            withCancel: { [weak self] error in
+                Task { @MainActor [weak self] in
+                    self?.errorMessage = error.localizedDescription
                 }
             }
+        )
+    }
+
+    private func stopListening() {
+        if let ref = observedReference,
+           let handle = observerHandle {
+            ref.removeObserver(withHandle: handle)
+        }
+
+        observedReference = nil
+        observerHandle = nil
+    }
+
+    // MARK: - Atomic Transaction
+
+    private func transaction(
+        at ref: DatabaseReference,
+        change: @escaping ([String: Any]?) -> [String: Any]?
+    ) async throws -> Bool {
+
+        try await withCheckedThrowingContinuation {
+            (continuation: CheckedContinuation<Bool, Error>) in
+
+            ref.runTransactionBlock({ currentData in
+                let existing = currentData.value as? [String: Any]
+
+                guard let updated = change(existing) else {
+                    return TransactionResult.abort()
+                }
+
+                currentData.value = updated
+                return TransactionResult.success(
+                    withValue: currentData
+                )
+
+            }, andCompletionBlock: { error, committed, _ in
+
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: committed)
+                }
+
+            }, withLocalEvents: false)
+        }
     }
 
     // MARK: - Cleanup
 
     func resetLocalSession() {
-        sessionListener?.remove()
-        sessionListener = nil
+        stopListening()
         session = nil
         pairingCode = nil
         errorMessage = nil
     }
 
     deinit {
-        sessionListener?.remove()
+        if let ref = observedReference,
+           let handle = observerHandle {
+            ref.removeObserver(withHandle: handle)
+        }
     }
 }
 
@@ -371,7 +469,23 @@ enum PairingError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .randomGenerationFailed:
-            return "Güvenli eşleştirme kodu oluşturulamadı."
+            return "Could not generate a secure connection code."
+        }
+    }
+}
+
+// MARK: - Connection End Errors
+
+enum PairingEndError: LocalizedError {
+    case notConnected
+    case operationInProgress
+
+    var errorDescription: String? {
+        switch self {
+        case .notConnected:
+            return "No active connection to end."
+        case .operationInProgress:
+            return "Another connection operation is in progress."
         }
     }
 }

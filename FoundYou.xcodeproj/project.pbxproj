@@ -10,6 +10,7 @@
 		3F7CBC9E307E6C8700C18B72 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 3F7CBC9D307E6C8700C18B72 /* FirebaseAuth */; };
 		3F7CBCA0307E6C8700C18B72 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 3F7CBC9F307E6C8700C18B72 /* FirebaseCore */; };
 		3F7CBCA2307E6C8700C18B72 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 3F7CBCA1307E6C8700C18B72 /* FirebaseFirestore */; };
+		3F7CBCD43080E4DE00C18B72 /* FirebaseDatabase in Frameworks */ = {isa = PBXBuildFile; productRef = 3F7CBCD33080E4DE00C18B72 /* FirebaseDatabase */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -43,6 +44,7 @@
 			files = (
 				3F7CBCA0307E6C8700C18B72 /* FirebaseCore in Frameworks */,
 				3F7CBC9E307E6C8700C18B72 /* FirebaseAuth in Frameworks */,
+				3F7CBCD43080E4DE00C18B72 /* FirebaseDatabase in Frameworks */,
 				3F7CBCA2307E6C8700C18B72 /* FirebaseFirestore in Frameworks */,
 			);
 		};
@@ -53,6 +55,7 @@
 			isa = PBXGroup;
 			children = (
 				3F7CBC7E307E3D5400C18B72 /* FoundYou */,
+				3F7CBCD23080E4DE00C18B72 /* Frameworks */,
 				3F7CBC7D307E3D5400C18B72 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -63,6 +66,13 @@
 				3F7CBC7C307E3D5400C18B72 /* FoundYou.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		3F7CBCD23080E4DE00C18B72 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -86,6 +96,7 @@
 				3F7CBC9D307E6C8700C18B72 /* FirebaseAuth */,
 				3F7CBC9F307E6C8700C18B72 /* FirebaseCore */,
 				3F7CBCA1307E6C8700C18B72 /* FirebaseFirestore */,
+				3F7CBCD33080E4DE00C18B72 /* FirebaseDatabase */,
 			);
 			productName = FoundYou;
 			productReference = 3F7CBC7C307E3D5400C18B72 /* FoundYou.app */;
@@ -277,8 +288,9 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = FoundYou/Info.plist;
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "FoundYou, arkadaşının yönünü bulmak için konum ve pusula bilgilerini kullanır.";
-				INFOPLIST_KEY_NSNearbyInteractionUsageDescription = "Arkadaşının yakın mesafedeki yönünü ve uzaklığını belirlemek için kullanılır.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "FoundYou uses background location during an active paired session so your friend can find you when your phone is locked.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "FoundYou uses your location to guide you toward your friend during an active search.";
+				INFOPLIST_KEY_NSNearbyInteractionUsageDescription = "FoundYou uses Nearby Interaction to determine your friend's direction and distance when you're close to each other.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -313,8 +325,9 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = FoundYou/Info.plist;
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "FoundYou, arkadaşının yönünü bulmak için konum ve pusula bilgilerini kullanır.";
-				INFOPLIST_KEY_NSNearbyInteractionUsageDescription = "Arkadaşının yakın mesafedeki yönünü ve uzaklığını belirlemek için kullanılır.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "FoundYou uses background location during an active paired session so your friend can find you when your phone is locked.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "FoundYou uses your location to guide you toward your friend during an active search.";
+				INFOPLIST_KEY_NSNearbyInteractionUsageDescription = "FoundYou uses Nearby Interaction to determine your friend's direction and distance when you're close to each other.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -385,6 +398,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 3F7CBC9C307E6C8700C18B72 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseFirestore;
+		};
+		3F7CBCD33080E4DE00C18B72 /* FirebaseDatabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3F7CBC9C307E6C8700C18B72 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseDatabase;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
