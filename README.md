@@ -7,6 +7,15 @@ FoundYou is a native iOS application designed to help people locate each other i
 Instead of navigating through a traditional map, users follow a 3D directional arrow that responds to device orientation and available positioning data.
 
 The project explores the integration of location services, device sensors, proximity technologies, and real-time communication into a unified navigation experience.
+## Screenshots
+
+<p align="center">
+  <img src="screenshots/pairing.png" alt="FoundYou main screen" width="250"/>
+  <img src="screenshots/connected.png" alt="FoundYou pairing screen" width="250"/>
+  <img src="screenshots/navigation.png" alt="FoundYou 3D navigation screen" width="250"/>
+</p>
+
+*Pairing, connection, and 3D navigation. Navigation screenshot uses simulated location data for demonstration.*
 
 ## Tech Stack
 
